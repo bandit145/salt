@@ -20,6 +20,7 @@ import importlib
 import logging
 import traceback
 from functools import wraps
+import threading
 
 import salt.output
 import salt.utils.args
@@ -147,6 +148,8 @@ def call(napalm_device, method, *args, **kwargs):
     opts = napalm_device.get("__opts__", {})
     retry = kwargs.pop("__retry", True)  # retry executing the task?
     force_reconnect = kwargs.get("force_reconnect", False)
+    tid = threading.get_native_id()
+    log.debug(f"CURRENT THREAD {tid}")
     if force_reconnect:
         log.debug("Forced reconnection initiated")
         log.debug("The current opts (under the proxy key):")
