@@ -19,6 +19,8 @@ import copy
 import importlib
 import logging
 import traceback
+import threading
+import time
 from functools import wraps
 
 import salt.output
@@ -53,6 +55,8 @@ except ImportError:
 
 log = logging.getLogger(__file__)
 
+NAPALM_LOCK_FUNCTIONS = ["load_replace_candidate", "load_merge_candidate"]
+NAPALM_UNLOCK_FUNCTIONS = ["discard_config", "commit_config"]
 
 def is_proxy(opts):
     """
@@ -144,7 +148,11 @@ def call(napalm_device, method, *args, **kwargs):
     """
     result = False
     out = None
+    lock = None
     opts = napalm_device.get("__opts__", {})
+    cur_time = time.time()
+    jid = threading.current_thread().name.split("-")[0]
+    lock_timeout = 10
     retry = kwargs.pop("__retry", True)  # retry executing the task?
     force_reconnect = kwargs.get("force_reconnect", False)
     if force_reconnect:
@@ -155,6 +163,19 @@ def call(napalm_device, method, *args, **kwargs):
         log.debug("Updated to:")
         log.debug(opts["proxy"])
         napalm_device = get_device(opts)
+    if method in NAPALM_LOCK_FUNCTIONS:
+        if napalm_device["THREAD_LOCK"].locked() and jid != napalm_device["LOCKING_JID"]:
+            if time.time() - napalm_device["LOCK_START_TIME"] > 60:
+                log.warning(f"Lock has been held without being released by JID {napalm_device['LOCKING_JID']} for too long, forcing a release")
+                napalm_device["THREAD_LOCK"].release()
+        acquired = napalm_device["THREAD_LOCK"].acquire(blocking=True, timeout=lock_timeout)
+        if not acquired:
+            log.debug(f"Could not acquire napalm lock, currently being held by JID {napalm_device['LOCKING_JID']}")
+            return {"result": result, "out": out, "comment": f"Could not acquire napalm lock, currently being held by JID {napalm_device['LOCKING_JID']}"}
+        napalm_device["LOCKING_JID"] = jid
+        napalm_device["LOCK_START_TIME"] = cur_time
+        log.debug(f"Lock acquired for JID {jid}: for napalm method {method}")
+        lock = napalm_device["THREAD_LOCK"]
     try:
         if not napalm_device.get("UP", False):
             raise Exception("not connected")
@@ -248,6 +269,12 @@ def call(napalm_device, method, *args, **kwargs):
         log.error(err_tb)
         return {"out": {}, "result": False, "comment": comment, "traceback": err_tb}
     finally:
+        if method in NAPALM_UNLOCK_FUNCTIONS and  napalm_device["LOCKING_JID"] == jid:
+            log.debug(f"Lock released for JID {jid}: with {method}")
+
+            napalm_device["LOCKING_JID"] = ""
+            napalm_device["LOCK_START_TIME"] = 0
+            napalm_device["THREAD_LOCK"].release()
         if opts and not_always_alive(opts) and napalm_device.get("CLOSE", True):
             # either running in a not-always-alive proxy
             # either running in a regular minion
@@ -343,6 +370,9 @@ def get_device(opts, salt_obj=None):
             timeout=network_device["TIMEOUT"],
             optional_args=network_device["OPTIONAL_ARGS"],
         )
+        network_device["THREAD_LOCK"] = threading.Lock()
+        network_device["LOCKING_JID"] = ""
+        network_device["LOCK_START_TIME"] = 0
         network_device.get("DRIVER").open()
         # no exception raised here, means connection established
         network_device["UP"] = True
