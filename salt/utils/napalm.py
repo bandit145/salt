@@ -21,6 +21,7 @@ import logging
 import traceback
 import threading
 import time
+import pdb
 from functools import wraps
 
 import salt.output
@@ -163,6 +164,7 @@ def call(napalm_device, method, *args, **kwargs):
         log.debug("Updated to:")
         log.debug(opts["proxy"])
         napalm_device = get_device(opts)
+    pdb.breakpoint()
     if method in NAPALM_LOCK_FUNCTIONS:
         if napalm_device["THREAD_LOCK"].locked() and jid != napalm_device["LOCKING_JID"]:
             if time.time() - napalm_device["LOCK_START_TIME"] > 60:
