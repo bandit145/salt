@@ -450,6 +450,7 @@ class ThreadPool:
     # the return at all, if we want to make this API compatible with multiprocessing
     # threadpool we can in the future, and we won't have to worry about name collision
     def fire_async(self, func, args=None, kwargs=None):
+        print("What am I running? ", str(func))
         if args is None:
             args = []
         if kwargs is None:
