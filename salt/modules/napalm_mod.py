@@ -267,12 +267,15 @@ def call(method, *args, **kwargs):
         # remove the __pub args
         if not karg.startswith("__pub_"):
             clean_kwargs[karg] = warg
-    return salt.utils.napalm.call(
-        napalm_device,  # pylint: disable=undefined-variable
-        method,
-        *args,
-        **clean_kwargs
-    )
+    log.info("PRE LOCK")
+    with NETWORK_CONFIG_LOCK[__opts__["id"]]:
+        log.info("AAAAA LOCKING")
+        return salt.utils.napalm.call(
+            napalm_device,  # pylint: disable=undefined-variable
+            method,
+            *args,
+            **clean_kwargs
+        )
 
 
 @proxy_napalm_wrap

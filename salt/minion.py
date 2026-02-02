@@ -16,6 +16,8 @@ import threading
 import time
 import traceback
 import types
+import builtins
+import salt.utils.network
 
 import salt
 import salt.beacons
@@ -3741,6 +3743,15 @@ class ProxyMinion(Minion):
     This class instantiates a 'proxy' minion--a minion that does not manipulate
     the host it runs on, but instead manipulates a device that cannot run a minion.
     """
+    def __init__(self, opts, timeout=60, safe=True, loaded_base_name=None, io_loop=None, jid_queue=None, load_grains=True):
+        if not hasattr(builtins, "NETWORK_CONFIG_ACCESS_LOCK"):
+            builtins.NETWORK_CONFIG_ACCESS_LOCK = threading.Lock()
+            builtins.NETWORK_CONFIG_LOCK = {opts["id"]: threading.Lock()}
+        with NETWORK_CONFIG_ACCESS_LOCK:
+            NETWORK_CONFIG_LOCK[opts["id"]] = threading.Lock()
+
+        super().__init__(opts, timeout, safe, loaded_base_name, io_loop, jid_queue, load_grains)
+
 
     # TODO: better name...
     @salt.ext.tornado.gen.coroutine
